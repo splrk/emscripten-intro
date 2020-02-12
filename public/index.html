@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebAssembly Demo</title>
+    <meta charset="utf-8">
+  </head>
+  <body>
+    <div>
+      len(<span id="x">x</span> <span id="y">3</span>) = <span id="len"></span>
+      <script type="text/javascript">
+        let x = 3;
+        let y = 4;
+        document.getElementById('x').innerText = x.toString();
+        document.getElementById('y').innerText = y.toString();
+
+        var Module = {
+          onRuntimeInitialized: () => {
+            let size = Module._size(x, y);
+            document.getElementById('len').innerText = size;
+          }
+        }
+      </script>
+      <script src="./size.js"></script>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "emscripten-intro-example",
+  "version": "1.0.0",
+  "description": "Example project for show how to compile a c module and load it into a browser ",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "build": "emcc -Os -s \"ENVIRONMENT=web\" size.c -o public/size.js",
+    "postbuild": "wasm2wat public/size.wasm > size.wat",
+    "build:dev": "emcc -s \"ENVIRONMENT=web\" -g size.c -o public/size.js",
+    "postbuild:dev": "npm run postbuild"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "browser-sync": "^2.26.7"
+  }
+}
