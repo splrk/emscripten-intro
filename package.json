@@ -6,9 +6,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "build": "emcc -Os -s \"ENVIRONMENT=web\" size.c -o public/size.js",
-    "postbuild": "wasm2wat public/size.wasm > size.wat",
-    "build:dev": "emcc -s \"ENVIRONMENT=web\" -g size.c -o public/size.js",
+    "prebuild": "cd libebur128/build && emmake make",
+    "prebuild:dev": "cd libebur128/build && emmake make",
+    "build": "emcc -Oz -s \"ENVIRONMENT=web\" -s \"EXPORTED_FUNCTIONS=['_ebur128_get_version', '_malloc']\" libebur128/build/libebur128.a -o public/ebur128.js",
+    "postbuild": "wasm2wat public/ebur128.wasm > public/ebur128.wat",
+    "build:dev": "emcc -s \"ENVIRONMENT=web\" -s \"EXPORTED_FUNCTIONS=['_ebur128_get_version', '_malloc']\" -g libebur128/build/libebur128.a -o public/ebur128.js",
     "postbuild:dev": "npm run postbuild"
   },
   "author": "",

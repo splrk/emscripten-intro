@@ -1,37 +1,44 @@
-# Intro to emscripten (Porting C code to the Web) Step 1
+# Intro to emscripten (Porting C code to the Web) Step 2
 
 Web Assembly can be a great way to port or use C / C++ code to the Web.  This repository is a linear set of commits that function as a step-by-step tutorial through how to take C code and run it in a browser.  To navigate to the different steps, view or checkout the git tags wich will all be prefixed with `step_##` where `##` is the order in which this tutorial is meant to be read.
 
 ## The code we are porting
 
-`size.c`
+We are going to work on porting a library to help up analyze files for the EBU R 128 loudness standard.  This is a standard scale for measuring how loud audio content sounds to human ears. Instead of just measuring the peak decibal at a given point, EBU R 128 measures the density of the sound.  If your interested you can read more here https://www.iconnectivity.com/blog/2017/6/10/ebu-r128-the-important-audio-breakthrough-youve-never-heard-of
 
-```c
-#include <math.h>
-#inlcude <emscripten.h>
+This step focuses on compiling a C library and using it from JavaScript.  The big idea we need to understand here is pointers.  In this step we are going to exute a airly simple function: `ebur128_get_version`.
 
-EMSCRIPTEN_KEEPALIVE
-double size(double x, double y) {
-  return sqrt(x * x + y * y);
-}
-```
+### Adding an external library
 
-We have a function that calculates the length of an 2-d vector. Notice the `EMSCRIPTEN_KEEPALIVE` macro.  This is what tells the compiler to make sure this is exported in wasm and therefore callable from JavaScript.  The other way we could do this would be passing an argument to the compiler `-s "EXPORTED_FUNCTIONS=['_size']" but this is less intuitive from the code and gets verbose when we start exporting more functions.
+This project used git subtrees to inlcude the `https://github.com/jiixyj/libebur128` library.  If you take a look at the docs you'll see that compiling this code requires CMake and GNU Make.  These programs are an environment configuration tool and a build automation tool respectively.  You will need to [Install CMake](https://cmake.org/install/) and [Install GNU Make](https://www.gnu.org/software/make/).
 
-***NOTE*** This function is a horrible idea in production.  The overhead for loading a Web Assembly module most likely outweighs the extra efficienty you might get when make the computation.  The above function can be replaced by `Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2))` which most likely calls back to C brwoser functions anyway.  *This is for learning purposes only*.  These ideas should be applied to more complex libraries and apps taht need heavy or customized computation..
-
-## How to compile
+Emscripten provides two tools to ensure that `configure`, `cmake` and `make` work: `emconfigure` and `emmake`.  To get started `cmake` needs to be invoked on the libebur128 library and then `make` needs to be invokes to create a binary that emscripten can work with.  Here are the commands that you will need to run:
 
 ```bash
-$ emcc -s "ENVIRONMENT=web" size.c -o size.js
+$ mkdir libebur128/build
+$ cd libebur128/build
+$ emconfigure cmake ..
+$ emmake make
 ```
+
+The final command will output a binary file `libebur/build/libebur128.a`.  This can now be passed into `emcc` to give us our web Assembly and JavaScript files.
+
+### Compiling
+
+```bash
+$ emcc -s "ENVIRONMENT=web" -s "EXPORTED_FUNCTIONS=['_ebur128_get_version']" libebur128/build/libebur128.a -o public/ebur128.js
+```
+
 * `-s "ENVIRONMENT=web"` - by default emscripten outputs a javascript file that will work with NodeJS and the Web.  This tells emscripten we only want this ti work in a browser environment.  This helps reduce code size.
-* `size.c` - Our source code
-* `-o size.js` - Tells the compiler to output JavaScript 'glue' code as well as a WASM file
+* `-s "EXPORTED_FUNCTIONS=['_ebur128_get_version','_malloc']"` - since we are not providing our own code with `EMSCRIPTEN_KEEPALIVE` annotations, we have to tell emscripten whitch functions to keep from the command line interface.  I'll explain why we need to export `_malloc` later.
+* `libebur128/build/libebur128.a` - The LLVM bit code to use.
+* `-o public/ebur128.js` - Tells the compiler to output JavaScript 'glue' code as well as a WASM file
+
+For convenience and reference there are two npm build scripts to compile code. The first is `npm run build:dev` which includes the `-g` flag for debug symbols.  The other is `npm run build` which builds with optimizations enabled. `emconfigure cmake` is not captured in the npm scripts so that will need to be run manually.
 
 ## How to call C code from Javascript
 
-Now we have a `.wasm` file as well as an emscripten runtime (the JavaScript "glue").  Now we need to actualy execure the WASM file in the browser and modify a webpage.  
+Now we have a `.wasm` file as well as an emscripten runtime (the JavaScript "glue").  Now we need to actualy execute the WASM file in the browser and display the results in the DOM.
 
 ```html
 ...
