@@ -1,12 +1,10 @@
-# Intro to emscripten (Porting C code to the Web) Step 2
+# Intro to emscripten (Porting C code to the Web) Step 3
 
 Web Assembly can be a great way to port or use C / C++ code to the Web.  This repository is a linear set of commits that function as a step-by-step tutorial through how to take C code and run it in a browser.  To navigate to the different steps, view or checkout the git tags wich will all be prefixed with `step_##` where `##` is the order in which this tutorial is meant to be read.
 
 ## The code we are porting
 
-We are going to work on porting a library to help up analyze files for the EBU R 128 loudness standard.  This is a standard scale for measuring how loud audio content sounds to human ears. Instead of just measuring the peak decibal at a given point, EBU R 128 measures the density of the entire sound file.  If your interested you can read more here https://www.iconnectivity.com/blog/2017/6/10/ebu-r128-the-important-audio-breakthrough-youve-never-heard-of
-
-This step focuses on compiling a C library and using it from JavaScript.  The big idea we need to understand here is pointers.  In this step we are going to execute a fairly simple function: `ebur128_get_version`.  Here is the function signature:
+In this step we are going to explore an alternative way of calling the same function from step 2: `ebur128_get_version`.  For reference, here is the function signature.
 
 ```c
 /** \brief Get library version number. Do not pass null pointers here.
@@ -18,71 +16,103 @@ This step focuses on compiling a C library and using it from JavaScript.  The bi
 void ebur128_get_version(int* major, int* minor, int* patch);
 ```
 
-### Adding an external library
+This time we are going to reserve memory and call `ebur128_get_version` from our own custom C code instead of from JavaScript.  This code is in `ebur128_wrapper.c`
 
-This project used git subtrees to inlcude the `https://github.com/jiixyj/libebur128` library.  If you take a look at the docs you'll see that compiling this code requires CMake and GNU Make.  These programs are an environment configuration tool and a build automation tool respectively.  You will need to [Install CMake](https://cmake.org/install/) and [Install GNU Make](https://www.gnu.org/software/make/).
+```c
+#include <stdio.h>
+#include <emscripten.h>
+#include "libebur128/ebur128/ebur128.h"
 
-Emscripten provides two tools to ensure that `configure`, `cmake` and `make` work: `emconfigure` and `emmake`.  To get started `cmake` needs to be invoked on the libebur128 library and then `make` needs to be invokes to create a binary that emscripten can work with.  Here are the commands that you will need to run:
+EMSCRIPTEN_KEEPALIVE
+char* get_version() {
+    static char version[8];
+    int major;
+    int minor;
+    int patch;
 
-```bash
-$ mkdir libebur128/build
-$ cd libebur128/build
-$ emconfigure cmake ..
-$ emmake make
+    ebur128_get_version(&major, &minor, &patch);
+    sprintf(version, "%d.%d.%d", major, minor, patch);
+    
+    return version;
+}
 ```
 
-The final command will output a binary file `libebur/build/libebur128.a`.  This can now be passed into `emcc` to give us our web Assembly and JavaScript files.
+Let's walk through the code a bit.
+
+First the imports
+1. `#inlcude <stdio.h>` - We need this for the `sprintf` function that creates a string.
+2. `#inlcude <emscripten.h>` - The need this for the `EMSCRIPTEN_KEEPALIVE` macro that exports our function
+3. `#inlucde "libebur128/ebur128/ebur128.h"` - This includes our ebur128 library.  Take note of the quotes instead of the lestt-than/greater-than brackets.  The quotes tell the C compiler that this is a custom include and that this header is not found in the standard libary.
+
+Next, the function:
+
+First we declare a string `char version[8]` since in C strings are just a string of characters.  I chose a length of 8 characters just in case we need double digits at some point. Notice the `static` keyword.  This makes sure that `version` is allocated in heap memory, therefore being preserved after the function call.  It also ensures that version is declared only once per program execution even if `get_version` is called multiple times.
+
+For `major`, `minor`, and `patch` I declare them as integers on the stack instead of reserving space for them on the heap.  Then to pass the address of them to `ebur128_get_version` I need to use the `&` symbol.
+
+Instead of passing numbers back to JavaScript, I'm using sprintf to do the string building for me and then pass the string back to JavaScript.
 
 ### Compiling
 
+First make sure you generate `libebur/build/libebur128.a` by following the instructions from [Adding an external library](https://gitlab.com/rseal/emscripten-intro/-/tree/step_02#adding-an-external-library) in step 2.
+
+Next:
+
 ```bash
 $ emcc -s "ENVIRONMENT=web" \
-  -s "EXPORTED_FUNCTIONS=['_ebur128_get_version', '_malloc']" \
-  -s "EXTRA_EXPORTED_RUNTIME_METHODS=['getVersion'] \
+  -s "EXTRA_EXPORTED_RUNTIME_METHODS=['ccalll'] \
   libebur128/build/libebur128.a -o public/ebur128.js
 ```
 
 * `-s "ENVIRONMENT=web"` - by default emscripten outputs a javascript file that will work with NodeJS and the Web.  This tells emscripten we only want this to work in a browser environment.  This helps reduce code size.
-* `-s "EXPORTED_FUNCTIONS=['_ebur128_get_version','_malloc']"` - since we are not providing our own code with `EMSCRIPTEN_KEEPALIVE` annotations, we have to tell emscripten whitch functions to keep from the command line interface.  I'll explain why we need to export `_malloc` later.
-* `-s "EXTRA_EXPORTED_RUNTIME_METHODS=['getVersion']` - We need the `getValue` emscripten runtime function to read values of C pointers.
+* `-s "EXTRA_EXPORTED_RUNTIME_METHODS=['ccall']` - `ccall` is an emscripten runtime function that will call an exported method and convert some C types to JavaScript equivalents.
 * `libebur128/build/libebur128.a` - The LLVM bit code from the library we want to use.
 * `-o public/ebur128.js` - Tells the compiler to output JavaScript 'glue' code as well as a WASM file
 
+Since we are creating a wrapper library and using `EMSCRIPTEN_KEEPALIVE` our compiler arguments are shorter since we don't need `-s EXPORTED_FUNCTIONS`.  This is nice if we have may exported functons.
+
 For convenience and reference there are two npm build scripts to compile code. The first is `npm run build:dev` which includes the `-g` flag for debug symbols.  The other is `npm run build` which builds with optimizations enabled. `emconfigure cmake` is not captured in the npm scripts so that will need to be run manually.
 
-## How to read C pointer values from Javascript
+## How to read C strings from Javascript
 
-The `ebur128_get_version` function does not return any values.  Instead, it asks for pointers, e.g. memory address.  This function expects to be given 3 memory address where it can write integeters.  This means we need to reserve space in Web Assembly Memory and then tell `ebur128_get_version` the memory address of the reserved space.  After the function is called, we need to look up the value inside that address to see what the function put inside it.  If you're not a `C` programmer this can be a bit confusing.  The following steps break it down:
+Web Assembly only handles integers and floats, not strings.  Therefore Web Assembly is going pass back the address of the string and leave it up to JavaScript to determine how to read the memory at that address. Fortunately, emscripten provides a runtime to handle converting a chunck of Web Assembly memory to a JavaScript string.  We could use `getValue` like we did in step 2, but this time we are going to reduce our code one function call by using `ccall`.  This allows us to call an exported function and tell the emscripten runtime to convert the return value to a Javascript Type ine one step:
 
-1. Find the size of the space you need.  For this function we need three different integers.  Integers in `C` take up 32-bits of memory which is **4 bytes**.
-2. Reserve space in WASM memory.  emscripten provides function to do this, which we explicitly exported at compile time: `_malloc`.  To reserve 4 bytes of Web Assembly memory we can call `var address = Module._malloc(4)` from inside our `onRuntimeInitialized` function.  This returns the memory address.
-3. Pass that memory address to our function `ebur128_get_version(address, ...)`
-4. Read the contents of that memory location in JavaScript.  emscripten modules provide another runtime method that we explicitly exported at compile time: `getValue`.  It takes two arguments: the address and the type of value stored there.  For us, this is a 32 bit integer which is `i32` so our call looks something like  `var value = Module.getValue(address, 'i32');`
+```JavaScript
+Module.ccall(
+  // Name of the exported function (without an underscore)
+  'get_version',
+  // The type to convert result to.  Can be number or boolean as well
+  'string`,
+  // The Javascript types of the function paramaters
+  [],
+  // The arguments to pass into our function
+  []
+)
+```
 
-Here is a full example where we get 3 different integers: The major version, the minor version and the patch version.
+For this use case we are only worried about the first two arguments since we do not need to pass in parameters.  For the full working example see below:
 
 ```html
 ...
       <script type="text/javascript">
         var Module = {
           onRuntimeInitialized: () => {
-            const ptrMajor = Module._malloc(4);
-            const ptrMinor = Module._malloc(4);
-            const ptrPatch = Module._malloc(4);
+            let version = Module.ccall(
+              'get_version',
+              'string',
+              [],
+              []
+            );
 
-            Module._ebur128_get_version(ptrMajor, ptrMinor, ptrPatch);
-
-            const version = {
-              major: Module.getValue(ptrMajor, 'i32'),
-              minor: Module.getValue(ptrMinor, 'i32'),
-              patch: Module.getValue(ptrPatch, 'i32')
-            }
-            document.getElementById('version').innerText = `${version.major}.${version.minor}.${version.patch}`;
+            document.getElementById('version').innerText = version;
           }
         }
       </script>
+      <script src="./ebur128.js"></script>
 ...
 ```
+
+The advantages we get from approaching the code this way are that first, we have less Javascript to write and can push write our pointer logic in a language that is more versatile with memory address and pointers. And secondly, we can control the exported functions from the C code instead of having to remember to specify each one in a compiler argument.
 
 ## Running the example
 

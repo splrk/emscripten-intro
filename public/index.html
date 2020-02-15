@@ -10,18 +10,14 @@
       <script type="text/javascript">
         var Module = {
           onRuntimeInitialized: () => {
-            const ptrMajor = Module._malloc(4);
-            const ptrMinor = Module._malloc(4);
-            const ptrPatch = Module._malloc(4);
+            let version = Module.ccall(
+              'get_version',
+              'string',
+              [],
+              []
+            );
 
-            Module._ebur128_get_version(ptrMajor, ptrMinor, ptrPatch);
-
-            const version = {
-              major: Module.getValue(ptrMajor, 'i32'),
-              minor: Module.getValue(ptrMinor, 'i32'),
-              patch: Module.getValue(ptrPatch, 'i32')
-            }
-            document.getElementById('version').innerText = `${version.major}.${version.minor}.${version.patch}`;
+            document.getElementById('version').innerText = version;
           }
         }
       </script>

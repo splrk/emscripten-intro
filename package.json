@@ -8,9 +8,9 @@
     "start": "node server.js",
     "prebuild": "cd libebur128/build && emmake make",
     "prebuild:dev": "cd libebur128/build && emmake make",
-    "build": "emcc -Oz -s \"ENVIRONMENT=web\" -s \"EXPORTED_FUNCTIONS=['_ebur128_get_version', '_malloc']\" libebur128/build/libebur128.a -o public/ebur128.js",
+    "build": "emcc -Oz -s \"ENVIRONMENT=web\" -s \"EXTRA_EXPORTED_RUNTIME_METHODS=['ccall']\" libebur128/build/libebur128.a ebur128_wrapper.c -o public/ebur128.js",
     "postbuild": "wasm2wat public/ebur128.wasm > public/ebur128.wat",
-    "build:dev": "emcc -s \"ENVIRONMENT=web\" -s \"EXPORTED_FUNCTIONS=['_ebur128_get_version', '_malloc']\" -g libebur128/build/libebur128.a -o public/ebur128.js",
+    "build:dev": "emcc -s \"ENVIRONMENT=web\" -s \"EXTRA_EXPORTED_RUNTIME_METHODS=['ccall']\" -g libebur128/build/libebur128.a ebur128_wrapper.c -o public/ebur128.js",
     "postbuild:dev": "npm run postbuild"
   },
   "author": "",
